@@ -1,0 +1,727 @@
+<html>
+
+<head>
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<title>CTC</title>
+
+<script type="text/javascript" src="Oak3D_v_0_5.js"></script>
+<script id="shader-fs" type="x-shader/x-fragment">
+
+    precision mediump float;
+
+
+    varying vec4 vColor;
+	varying vec3 vLightWeighting;
+
+    void main(void) {
+        gl_FragColor = vec4(vColor.rgb*vLightWeighting,1.0);
+		
+    }
+</script>
+
+<script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec3 aVertexPosition;
+	attribute vec3 aVertexNormal;
+    attribute vec4 aVertexColor;
+
+    uniform mat4 uMVColon;
+    uniform mat4 uPColon;
+    uniform mat4 uNColon;
+
+	uniform vec3 uAmbientColor;
+	
+	uniform vec3 uPointLightingLocation;
+    uniform vec3 uPointLightingColor;
+	
+	uniform vec3 uPointLightingLocation2;
+    uniform vec3 uPointLightingColor2;
+	
+	uniform vec3 uLightingDirection;
+    uniform vec3 uDirectionalColor;
+	
+	uniform bool uUseLighting;
+	
+	varying vec4 vColor;
+	varying vec3 vLightWeighting;
+
+    void main(void) {
+       
+		vec4 mvPosition = uMVColon * vec4(aVertexPosition, 1.0);
+        gl_Position = uPColon * mvPosition;
+        vColor = aVertexColor;
+		if (!uUseLighting) {
+		vLightWeighting = vec3(1.0, 1.0, 1.0);}
+		else{
+			vec3 lightDirection = normalize(uPointLightingLocation - mvPosition.xyz);
+			vec3 lightDirection2 = normalize(uPointLightingLocation2 - mvPosition.xyz);
+			vec3 transformedNormal = (uNColon * vec4(aVertexNormal,1.0)).xyz;
+		    float directionalLightWeighting = max(dot(transformedNormal, lightDirection), 0.0);
+			 float directionalLightWeighting2 = max(dot(transformedNormal, lightDirection2), 0.0);
+            float udirectionalLightWeighting = max(dot(transformedNormal, uLightingDirection), 0.0);
+            vLightWeighting = uAmbientColor + uDirectionalColor * udirectionalLightWeighting+uPointLightingColor * directionalLightWeighting+uPointLightingColor2 * directionalLightWeighting2; 
+    
+		}
+		}
+</script>
+
+
+<script type="text/javascript">
+
+    var gl;
+	var VertexNum=0;
+	var NormalNum=0;
+
+    function initGL(canvas) {
+        try {
+            gl = canvas.getContext("experimental-webgl");
+            gl.viewportWidth = canvas.width;
+            gl.viewportHeight = canvas.height;
+        } catch (e) {
+        }
+        if (!gl) {
+            alert("Could not initialise WebGL, sorry :-(");
+        }
+    }
+
+
+    function getShader(gl, id) {
+        var shaderScript = document.getElementById(id);
+        if (!shaderScript) {
+            return null;
+        }
+
+        var str = "";
+        var k = shaderScript.firstChild;
+        while (k) {
+            if (k.nodeType == 3) {
+                str += k.textContent;
+            }
+            k = k.nextSibling;
+        }
+
+        var shader;
+        if (shaderScript.type == "x-shader/x-fragment") {
+            shader = gl.createShader(gl.FRAGMENT_SHADER);
+        } else if (shaderScript.type == "x-shader/x-vertex") {
+            shader = gl.createShader(gl.VERTEX_SHADER);
+        } else {
+            return null;
+        }
+
+        gl.shaderSource(shader, str);
+        gl.compileShader(shader);
+
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            alert(gl.getShaderInfoLog(shader));
+            return null;
+        }
+
+        return shader;
+    }
+
+
+    var shaderProgram;
+
+    function initShaders() {
+        var fragmentShader = getShader(gl, "shader-fs");
+        var vertexShader = getShader(gl, "shader-vs");
+
+        shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            alert("Could not initialise shaders");
+        }
+
+        gl.useProgram(shaderProgram);
+
+        shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+        gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+        shaderProgram.vertexColorAttribute = gl.getAttribLocation(shaderProgram, "aVertexColor");
+        gl.enableVertexAttribArray(shaderProgram.vertexColorAttribute);
+		
+		shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+        gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+        shaderProgram.pColonUniform = gl.getUniformLocation(shaderProgram, "uPColon");
+        shaderProgram.mvColonUniform = gl.getUniformLocation(shaderProgram, "uMVColon");
+		shaderProgram.nColonUniform = gl.getUniformLocation(shaderProgram, "uNColon");
+      
+        shaderProgram.useLightingUniform = gl.getUniformLocation(shaderProgram, "uUseLighting");
+        shaderProgram.ambientColorUniform = gl.getUniformLocation(shaderProgram, "uAmbientColor");
+        shaderProgram.lightingDirectionUniform = gl.getUniformLocation(shaderProgram, "uLightingDirection");
+        shaderProgram.directionalColorUniform = gl.getUniformLocation(shaderProgram, "uDirectionalColor");
+		shaderProgram.pointLightingLocationUniform = gl.getUniformLocation(shaderProgram, "uPointLightingLocation");
+        shaderProgram.pointLightingColorUniform = gl.getUniformLocation(shaderProgram, "uPointLightingColor");
+		shaderProgram.pointLightingLocation2Uniform = gl.getUniformLocation(shaderProgram, "uPointLightingLocation2");
+        shaderProgram.pointLightingColor2Uniform = gl.getUniformLocation(shaderProgram, "uPointLightingColor2");
+    }
+
+
+    var mvColon ;
+    var mvColonStack = [];
+    var pColon ;
+
+    function mvPushColon() {
+        var copy = new okMat4();
+        mvColon.clone(copy);
+        mvColonStack.push(copy);
+    }
+
+    function mvPopColon() {
+        if (mvColonStack.length == 0) {
+            throw "Invalid popColon!";
+        }
+        mvColon = mvColonStack.pop();
+    }
+
+
+    function setColonUniforms() {
+        gl.uniformMatrix4fv(shaderProgram.pColonUniform, false, pColon.toArray());
+        gl.uniformMatrix4fv(shaderProgram.mvColonUniform, false, mvColon.toArray());
+		var normalColon = mvColon.inverse().transpose();
+        gl.uniformMatrix4fv(shaderProgram.nColonUniform, false, normalColon.toArray());
+    }
+//******************************************************
+ //添加鼠标事件
+ 		function degToRad(degrees) {
+        return degrees * Math.PI / 180;
+    }
+	
+		var mouseDown = false;
+    var lastMouseX = null;
+    var lastMouseY = null;
+	  var filter = 0;
+	  var RotationMatrix = new okMat4();   //RotationMatrix用来储存当前物体旋转状态的矩阵
+ 		function handleMouseDown(event) {
+        mouseDown = true;
+        lastMouseX = event.clientX;
+        lastMouseY = event.clientY;
+    }
+
+
+    function handleMouseUp(event) {
+        mouseDown = false;
+    }
+    function handleMouseMove(event) {
+        if (!mouseDown) {
+            return;
+        }
+        var newX = event.clientX;
+        var newY = event.clientY;
+        
+        var deltaX = newX - lastMouseX
+        var newRotationMatrix = new okMat4();
+        newRotationMatrix.rotY(OAK.SPACE_LOCAL, deltaX / 10, true);
+
+        var deltaY = newY - lastMouseY;
+        newRotationMatrix.rotX(OAK.SPACE_LOCAL, deltaY / 10, true);
+
+        RotationMatrix = okMat4Mul(newRotationMatrix, RotationMatrix);
+
+        lastMouseX = newX
+        lastMouseY = newY;
+    }
+    var currentlyPressedKeys = {};
+    
+    function handleKeyDown(event) {
+        currentlyPressedKeys[event.keyCode] = true;
+ 
+        if (String.fromCharCode(event.keyCode) == "F") {
+            filter += 1;
+            if (filter == 3) {
+                filter = 0;
+            }
+        }
+    }
+    
+    var currentlyPressedKeys = {};
+    
+     function handleKeyDown(event) {
+        currentlyPressedKeys[event.keyCode] = true;
+ 
+        if (String.fromCharCode(event.keyCode) == "F") {
+            filter += 1;
+            if (filter == 3) {
+                filter = 0;
+            }
+        }
+    }
+    
+    function handleKeyUp(event) {
+        currentlyPressedKeys[event.keyCode] = false;
+    }
+	
+	function handleKeys() {
+        if (currentlyPressedKeys[33]) {
+            // Page Up
+            z -= 0.005;
+        }
+        if (currentlyPressedKeys[34]) {
+            // Page Down
+            z += 0.005;
+        }
+        if (currentlyPressedKeys[38]) {
+       			//改变y轴
+        		y+=0.005;
+        }
+        
+        if (currentlyPressedKeys[40]) {
+       			//改变y轴
+        		y-=0.005;
+        }
+        if (currentlyPressedKeys[37]) {
+       			//改变x轴
+        		x-=0.005;
+        }
+        if (currentlyPressedKeys[39]) {
+       			//改变x轴
+        		x+=0.005;
+        }
+        if (currentlyPressedKeys[65]) {
+       			//绕x轴旋转
+        		rx-=0.03;
+        }
+		if (currentlyPressedKeys[68]) {
+       			//绕x轴旋转
+        		rx+=0.03;
+        }
+		if (currentlyPressedKeys[87]) {
+       			//绕y轴旋转
+        		ry-=0.03;
+        }
+		if (currentlyPressedKeys[83]) {
+       			//绕y轴旋转
+        		ry+=0.03;
+        }
+		if (currentlyPressedKeys[90]) {
+       			//绕z轴旋转
+        		rz-=0.03;
+        }
+		if (currentlyPressedKeys[88]) {
+       			//绕x轴旋转
+        		rz+=0.03;
+        }
+        
+        
+		}
+	
+  
+//******************************************************
+    var colonVertexPositionBuffer;
+    var colonVertexColorBuffer;
+    var colonVertexNormalBuffer;
+
+    function initBuffers() {
+        colonVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexPositionBuffer);
+        var vertices = vertex;
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        colonVertexPositionBuffer.itemSize = 3;
+        colonVertexPositionBuffer.numItems = 5140116;
+		
+	//********************************************************************
+	    colonVertexNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexNormalBuffer);
+        var vertexNormals = normal;
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertexNormals), gl.STATIC_DRAW);
+        colonVertexNormalBuffer.itemSize = 3;
+        colonVertexNormalBuffer.numItems = 5140116;
+		
+		
+		
+	//*******************************************************************	
+
+        colonVertexColorBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexColorBuffer);
+		 var colors= new Array();
+        for (var i=0; i < 20560464; i++) {
+            colors[i] = 1.0;
+        }        
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.STATIC_DRAW);
+        colonVertexColorBuffer.itemSize = 4;
+        colonVertexColorBuffer.numItems = 5140116;       
+    }
+  
+
+    function drawScene() {
+        gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        pColon = okMat4Proj(45, gl.viewportWidth / gl.viewportHeight, 0.01, 100);
+        mvColon = new okMat4();
+        mvColon= okMat4Mul(mvColon, RotationMatrix); 
+        
+      //  mvColon = okMat4Trans(0,0,z);
+	   		 mvPushColon();
+				mvColon.translate(OAK.SPACE_WORLD, x,y,z, true);
+				mvColon.rotX(OAK.SPACE_LOCAL,rx, true);
+				mvColon.rotY(OAK.SPACE_LOCAL,ry, true);
+				 
+				mvColon.rotZ(OAK.SPACE_LOCAL, rz, true);
+		 
+		 		
+	 
+        gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, colonVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		
+		gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, colonVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, colonVertexColorBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexColorAttribute, colonVertexColorBuffer.itemSize, gl.FLOAT, false, 0, 0);
+		
+		var lighting =true;
+		 
+        gl.uniform1i(shaderProgram.useLightingUniform, lighting);
+		if (lighting) {
+             gl.uniform3f(
+                shaderProgram.ambientColorUniform,
+                parseFloat(0.2),
+                parseFloat(0.2),
+                parseFloat(0.2)
+            );
+			
+			gl.uniform3f(
+                shaderProgram.pointLightingLocationUniform,
+                parseFloat(-0.35),
+                parseFloat(0.8),
+                parseFloat(0.1)
+            );
+
+            gl.uniform3f(
+                shaderProgram.pointLightingColorUniform,
+                parseFloat(0.6),
+                parseFloat(0.6),
+                parseFloat(0.6)
+            );
+			
+			gl.uniform3f(
+                shaderProgram.pointLightingLocation2Uniform,
+                parseFloat(0.7),parseFloat(-0.2),parseFloat(0)
+            );
+
+            gl.uniform3f(
+                shaderProgram.pointLightingColor2Uniform,
+                parseFloat(0.8),parseFloat(0.8),parseFloat(0.8)
+            );
+        
+
+            var lightingDirection = new okVec3(
+                parseFloat(0.2),
+                parseFloat(0.2),
+                parseFloat(0.8)
+            );
+            
+            var adjustedLD = lightingDirection.normalize(false);
+            adjustedLD = okVec3MulVal(adjustedLD, -1.0);
+            gl.uniform3fv(shaderProgram.lightingDirectionUniform, adjustedLD.toArray());
+
+            gl.uniform3f(
+                shaderProgram.directionalColorUniform,
+                parseFloat(0.8),
+                parseFloat(0.8),
+                parseFloat(0.8)
+            );
+        }
+
+        setColonUniforms();
+        gl.drawArrays(gl.TRIANGLES, 0, colonVertexPositionBuffer.numItems);
+
+        mvPopColon();
+
+    }
+
+   		var rx = -81.35;   			
+		var ry=0.15; 
+		var rz=-0.56;
+		var lastTime = 0;
+		var flag=0;
+		
+		var x=0.715;
+		var y=-0.21;
+		var z=-0.56;
+		var Randertimes=0;
+	 
+	 	function animate() {
+			if(z<-0.43 && rz<5.08)
+			{
+				z+=0.00065*1*flag;
+				rz+=0.0282*1*flag;
+			}
+			
+			 else if(z<-0.415 && rz<20.11)
+			{
+				z+=0.000075*1*flag;
+				x-=0.0005*1*flag;
+				y-=0.000125*1*flag;
+				rx-=0.0258*1*flag;
+				ry-=0.0051*1*flag;
+				rz+=0.0751*1*flag;
+			}
+			else if(z<-0.3 && rz<41.13)
+			{
+				x-=0.00057*1*flag;
+				y-=0.00024*1*flag;
+				z+=0.00023*1*flag;
+				rx-=0.01464*1*flag;
+				rz+=0.04206*1*flag;
+			}
+			else if(z<-0.295 && rz<45.09)
+			{
+				z+=0.00005*1*flag;
+				x-=0.0002*1*flag;
+				rx+=0.0705*1*flag;
+				rz+=0.0396*1*flag;
+			}
+			 else if(z<-0.265 && rz<83.13)
+			{
+				x-=0.00079*1*flag;
+				y+=0.00009*1*flag;
+				z+=0.00007*1*flag;
+				rx+=0.00492*1*flag;
+				rz+=0.084*1*flag;
+			} 
+			else if(z<-0.085 && x>-0.084)
+			{
+				x-=0.0003*1*flag;
+				z+=0.0009*1*flag;
+				rx-=0.04455*1*flag;
+				ry-=0.0201*1*flag;
+				rz+=0.0057*1*flag;
+			} 
+			else if(z<0.095 && rx>-94.119)
+			{
+				x-=0.00015*1*flag;
+				y+=0.000025*1*flag;
+				z+=0.0009*1*flag;
+				rx-=0.0027*1*flag;
+				ry+=0.025*1*flag;
+				 
+			}
+			else if(z<0.11 && rx>-96.009)
+			{
+				z+=0.0000375*1*flag;
+				rx-=0.004725*1*flag;
+				ry+=0.0645*1*flag;
+				rz-=0.0381*1*flag;
+			}
+			else if(z<0.175 && rx>-115.659)
+			{
+				x+=0.000125*1*flag;
+				y-=0.000125*1*flag;
+				z+=0.0001625*1*flag;
+				rx-=0.049*1*flag;
+				ry+=0.0535*1*flag;
+				rz-=0.0355*1*flag;
+			}
+			else if(z<0.24 && rz>47.763)
+			{
+				x+=0.0005875*1*flag;
+				y-=0.000125*1*flag;
+				z+=0.0001625*1*flag;
+				ry-=0.0063*1*flag;
+				rz-=0.024*1*flag;
+			}
+			else if(z<0.229 && rz>46.303)
+			{
+				x+=0.0001*1*flag;
+				y-=0.000125*1*flag;
+				z+=0.0001*1*flag;
+				rx-=0.0042*1*flag;
+				ry+=0.02985*1*flag;
+				rz-=0.0072*1*flag;
+			}
+			 else if(z<0.434 && rz>40.483)
+			{
+				x+=0.0008625*1*flag;
+				y+=0.000375*1*flag;
+				z+=0.0005125*1*flag;
+				rx-=0.00705*1*flag;
+				ry-=0.07905*1*flag;
+				rz-=0.01455*1*flag;
+			}
+			
+				 
+			 
+		 console.log("x:"+x.toFixed(3)+" ,y:"+y.toFixed(3)+" ,z:"+z.toFixed(3));
+	     console.log("rx:"+rx.toFixed(3)+" ,ry:"+ry.toFixed(3)+" ,rz:"+rz.toFixed(3));  			
+		  
+		 
+    }
+	
+	function tick() {
+        okRequestAnimationFrame(tick);   //安排好在下次重绘时调用tick函数	 
+		drawScene();
+        animate();
+    }
+	var c=0;
+	var t;
+	  
+	  function tick2() {
+        okRequestAnimationFrame(tick2);   //安排好在下次重绘时调用tick函数
+		handleKeys();
+        drawScene();
+        
+    }
+	
+    function ColonStart() {
+				var webGLStartTime=new Date().getTime();
+        var canvas = document.getElementById("colon-canvas");
+        initGL(canvas);
+        initShaders();
+        initBuffers();
+		flag=1;
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+		
+		drawScene()
+				
+        canvas.onmousedown = handleMouseDown;
+        document.onmouseup = handleMouseUp;
+        document.onmousemove = handleMouseMove;
+		    document.onkeydown = handleKeyDown;
+        document.onkeyup = handleKeyUp;
+        
+        tick2();
+    }
+	  function webGLPause(){
+		  window.clearInterval(c);
+		 //  okRequestAnimationFrame(tick);   //安排好在下次重绘时调用tick函数	 
+		 var canvas = document.getElementById("colon-canvas");
+		
+		initGL(canvas);
+        initShaders();
+        initBuffers();
+		flag=0;
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+		
+		drawScene();
+	 
+		//  window.cancelAnimationFrame(stop);//可以取消该次动画。
+		 // ColonStart();		    
+		  
+		  }
+	 
+	var vertex;
+    var normal;
+	var loadtime;
+	 
+	//**********************************************************
+ function fileSelect4(e)
+{   
+    
+    var time3=new Date().getTime();
+	
+	vertex=new Array();
+    var file =document.getElementById("file4").files[0];     
+    var reader = new FileReader();   
+    
+	
+	var length=file.size;  
+    reader.readAsArrayBuffer(file.slice(0,length));	
+	var VertexNum=length/4/3;	 
+	
+	  
+	var r = document.getElementById('range');
+        
+		
+	reader.onloadend = function(e) {
+	if(this.readyState == FileReader.DONE) {
+		  
+		var buf=new DataView(this.result);	
+
+		for(var i=0,j=0;i<length,j<length/4;i+=4,j++){
+			vertex[j]=buf.getFloat32(i) ;		
+		}
+			//    c.innerHTML=vertex;	 
+				  				 
+				return vertex,loadtime;					 
+		}
+		
+	};
+	
+}
+	//**********************************************
+	function fileSelect5(e)
+{   
+    var loadtime2=0;
+	var time5=new Date().getTime();
+	normal=new Array();
+    var file =document.getElementById("file5").files[0];     
+    var reader = new FileReader(); 
+	var length=file.size;  
+    reader.readAsArrayBuffer(file.slice(0,length));	
+	NormalNum=length/4/3;
+	
+	 	 
+	var c = document.getElementById('content');
+	var l = document.getElementById('loading');
+		
+		reader.onloadend = function(e) {
+        if(this.readyState == FileReader.DONE) {
+                
+	     var buf=new DataView(this.result);		
+	
+   
+		for(var i=0,j=0;i<length,j<length/4;i+=4,j++){
+	        normal[j]=buf.getFloat32(i) ;		
+	    }
+			//    c.innerHTML=vertex;	
+			    var time6=new Date().getTime(); 
+				 
+				return normal;						 
+		}
+    };
+	 }
+	//********************************************** 
+		function sel1(){
+		 var value= localStorage["name"]; 
+		 window.open('http://134.175.21.96:8080/download/vertex'+value);	
+	 }
+	 function sel2(){
+		 var value= localStorage["name"]; 
+		 window.open('http://134.175.21.96:8080/download/normal'+value);	
+	 }
+	 function speedup(){
+		 flag+=0.5;}
+</script>
+
+
+</head>
+
+
+<body> 
+<br>
+	 <input type="button" value="DownloadVertex" onClick="sel1()" />
+     <input type="button" value="DownloadNormal" onClick="sel2()" /> 
+     <div>read vertex08779 <input type="file" id="file4" onChange="fileSelect4()" /></div>
+     <div id="range" ></div>     
+     <div>read normal08779 <input type="file" id="file5" onChange="fileSelect5()" /></div>  
+     <div id="content"></div> 
+     <div id="loading" ></div>
+     
+     <div>
+    <button onClick="ColonStart()" >display</button>
+    <button onClick="tick()" >playing</button>
+<!--    <button onClick="webGLPause()" >pause</button>
+    <button onClick="speedup()" >+</button>-->
+   
+    <div id="RederTime"></div>
+     </div>
+
+    <canvas id="colon-canvas" style="border: none;" width="500" height="500"></canvas>
+      
+<br />
+ 
+     
+
+</body>
+
+</html>
